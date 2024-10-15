@@ -18,6 +18,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	csign "github.com/cloudflare/circl/sign"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa44"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // DNSSEC encryption algorithm codes.
@@ -39,6 +44,10 @@ const (
 	ECDSAP384SHA384
 	ED25519
 	ED448
+	_                // SM2SM3
+	MLDSA44          // Currently Unassigned
+	MLDSA65          // Currently Unassigned
+	MLDSA87          // Currently Unassigned
 	INDIRECT   uint8 = 252
 	PRIVATEDNS uint8 = 253 // Private (experimental keys)
 	PRIVATEOID uint8 = 254
@@ -62,6 +71,9 @@ var AlgorithmToString = map[uint8]string{
 	INDIRECT:         "INDIRECT",
 	PRIVATEDNS:       "PRIVATEDNS",
 	PRIVATEOID:       "PRIVATEOID",
+	MLDSA44:          "MLDSA44",
+	MLDSA65:          "MLDSA65",
+	MLDSA87:          "MLDSA87",
 }
 
 // AlgorithmToHash is a map of algorithm crypto hash IDs to crypto.Hash's.
@@ -78,6 +90,9 @@ var AlgorithmToHash = map[uint8]crypto.Hash{
 	ECDSAP384SHA384:  crypto.SHA384,
 	RSASHA512:        crypto.SHA512,
 	ED25519:          0,
+	MLDSA44:          0,
+	MLDSA65:          0,
+	MLDSA87:          0,
 }
 
 // DNSSEC hashing algorithm codes.
@@ -325,7 +340,7 @@ func sign(k crypto.Signer, hashed []byte, hash crypto.Hash, alg uint8) ([]byte, 
 	}
 
 	switch alg {
-	case RSASHA1, RSASHA1NSEC3SHA1, RSASHA256, RSASHA512, ED25519:
+	case RSASHA1, RSASHA1NSEC3SHA1, RSASHA256, RSASHA512, ED25519, MLDSA44, MLDSA65, MLDSA87:
 		return signature, nil
 	case ECDSAP256SHA256, ECDSAP384SHA384:
 		ecdsaSignature := &struct {
@@ -464,6 +479,28 @@ func (rr *RRSIG) Verify(k *DNSKEY, rrset []RR) error {
 		}
 		return ErrSig
 
+	case MLDSA44, MLDSA65, MLDSA87:
+		pubkey := k.publicKeyMLDSA()
+		if pubkey == nil {
+			return ErrKey
+		}
+
+		var scheme csign.Scheme
+		switch k.Algorithm {
+		case MLDSA44:
+			scheme = mldsa44.Scheme()
+		case MLDSA65:
+			scheme = mldsa65.Scheme()
+		case MLDSA87:
+			scheme = mldsa87.Scheme()
+		default:
+			return ErrAlg
+		}
+
+		if scheme.Verify(pubkey, append(signeddata, wire...), sigbuf, nil) {
+			return nil
+		}
+		return ErrSig
 	default:
 		return ErrAlg
 	}
@@ -584,6 +621,29 @@ func (k *DNSKEY) publicKeyED25519() ed25519.PublicKey {
 		return nil
 	}
 	return keybuf
+}
+
+func (k *DNSKEY) publicKeyMLDSA() csign.PublicKey {
+	keybuf, err := fromBase64([]byte(k.PublicKey))
+	if err != nil {
+		return nil
+	}
+
+	var key csign.PublicKey
+
+	switch k.Algorithm {
+	case MLDSA44:
+		key, err = mldsa44.Scheme().UnmarshalBinaryPublicKey(keybuf)
+	case MLDSA65:
+		key, err = mldsa65.Scheme().UnmarshalBinaryPublicKey(keybuf)
+	case MLDSA87:
+		key, err = mldsa87.Scheme().UnmarshalBinaryPublicKey(keybuf)
+	}
+
+	if err != nil {
+		return nil
+	}
+	return key
 }
 
 type wireSlice [][]byte

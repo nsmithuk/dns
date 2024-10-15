@@ -8,7 +8,38 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"math/big"
+
+	csign "github.com/cloudflare/circl/sign"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa44"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
+
+// GenerateMLDSA generates a DNSKEY using ML-DSA.
+// ML-DSA doesn't really think of things in bits, so using the existing function seems odd.
+// (Seems odd anyway that algorithms with a known/fixed bit size need that value specifying)
+func (k *DNSKEY) GenerateMLDSA() (crypto.PrivateKey, error) {
+	var err error
+	var public csign.PublicKey
+	var secret csign.PrivateKey
+
+	switch k.Algorithm {
+	case MLDSA44:
+		public, secret, err = mldsa44.Scheme().GenerateKey()
+	case MLDSA65:
+		public, secret, err = mldsa65.Scheme().GenerateKey()
+	case MLDSA87:
+		public, secret, err = mldsa87.Scheme().GenerateKey()
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	k.setPublicKeyMLDSA(public)
+
+	return secret, err
+}
 
 // Generate generates a DNSKEY of the given bit size.
 // The public part is put inside the DNSKEY record.
@@ -109,6 +140,18 @@ func (k *DNSKEY) setPublicKeyED25519(_K ed25519.PublicKey) bool {
 		return false
 	}
 	k.PublicKey = toBase64(_K)
+	return true
+}
+
+func (k *DNSKEY) setPublicKeyMLDSA(_K csign.PublicKey) bool {
+	if _K == nil {
+		return false
+	}
+	buf, err := _K.MarshalBinary()
+	if err != nil {
+		return false
+	}
+	k.PublicKey = toBase64(buf)
 	return true
 }
 
