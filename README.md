@@ -5,6 +5,12 @@
 
 # Alternative (more granular) approach to a DNS library
 
+> [!NOTE]
+> Experiment to include the Post-Quantum ML-DSA as a DNSSEC signing option.
+
+> [!CAUTION]
+> Not in any way production safe. 
+
 > Less is more.
 
 Complete and usable DNS library. All Resource Records are supported, including the DNSSEC types.
